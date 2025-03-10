@@ -115,15 +115,27 @@ class StoNet_Causal(nn.Module):
     def likelihood_miss(self, x_impute, graph):
         likelihoods = []
         for i in range(len(self.miss_col)):
+            # 
             with torch.no_grad():
+                # The index set of variables associated with the i-th missing variable, denoted as X2
                 graph_idx = graph[i]
+                # 提取相关变量的数据子集 (graph_x) 
                 graph_x = x_impute[:, graph_idx]
+                # 均值向量 μ = [μ1, μ2]
                 graph_mean = graph_x.mean(dim=0)
+                # 协方差矩阵 Σ = [[Σ_11, Σ_12], [Σ_21, Σ_22]]
                 graph_cov = graph_x.T.cov()
+                # 计算条件均值的回归系数: Σ_22^(-1) Σ_21
                 temp = torch.linalg.solve(graph_cov[1:len(graph_idx), 1:len(graph_idx)], graph_cov[1:len(graph_idx), 0])
+                # 计算条件均值: 
+                # μ_{1|2} = μ1 + Σ_12 Σ_22^(-1) (X2 - μ2)
                 cond_mean = graph_mean[0] + torch.matmul(graph_x[:, 1:len(graph_idx)] -
                                                          graph_mean[1:len(graph_idx)], temp)
+                # 计算条件方差:
+                # σ²_{1|2} = Σ_11 - Σ_12 Σ_22^(-1) Σ_21
                 cond_cov = graph_cov[0, 0] - torch.matmul(temp, graph_cov[1:len(graph_idx), 0])
+            # 计算对数似然的一部分:
+            # log p(x_1 | X_2) ∝ - (x_1 - μ_{1|2})² / (2 σ²_{1|2})
             likelihoods.append(-self.sse(x_impute[:, self.miss_col[i]], cond_mean)/(2*cond_cov))
         likelihood = sum(likelihoods)
         return likelihood
